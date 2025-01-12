@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "id": "webmapview",
+  "version": "${version}",
+  "name": "WebmapView",
+  "description": "WebmapView allows players to view web map services (squaremap) through an in-game browser interface, supporting features like custom URLs",
+  "authors": [
+    "王兴家 <xingwangzhe@outlook.com>"
+  ],
+  "contact": {
+    "homepage": "https://github.com/xingwangzhe/webmapview",
+    "sources": "https://github.com/xingwangzhe/webmapview",
+    "issues": "https://github.com/xingwangzhe/webmapview/issues"
+  },
+  "donate": "https://afdian.com/a/xingwangzhe",
+  "license":"GPL-3.0",
+  "icon": "assets/webmapview/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "fun.xingwangzhe.webmapview.client.WebmapviewClient"
+    ],
+    "main": [
+      "fun.xingwangzhe.webmapview.Webmapview"
+    ]
+  },
+  "mixins": [
+    "webmapview.mixins.json",
+    {
+      "config": "webmapview.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric": "*",
+    "minecraft": "${minecraft_version}",
+    "mcef": "2.1.6-1.20.1"
+  }
+}

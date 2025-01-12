@@ -1,0 +1,15 @@
+{
+  "feedback.url.added": "URL added: %s",
+  "feedback.url.exists": "URL already exists: %s",
+  "feedback.default.url.updated": "Default URL updated to: %s",
+  "feedback.url.not_found": "URL not found in list: %s",
+  "feedback.url.removed": "URL removed: %s",
+  "feedback.player_or_world_not_available": "Player or world not available.",
+  "command.urladd.description": "Add a new URL to the list.",
+  "command.urlremove.description": "Remove an existing URL from the list.",
+  "command.urllist.description": "List all available URLs.",
+  "command.urlset.description": "Set the default URL.",
+  "command.webmapviewoption.description": "Toggle web map view option.",
+  "key.webmapview.open_basic_browser": "open_browser",
+  "category.webmapview": "Webmapview"
+}

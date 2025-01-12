@@ -1,0 +1,16 @@
+{
+  "feedback.url.added": "已添加URL: %s",
+  "feedback.url.exists": "URL已存在: %s",
+  "feedback.default.url.updated": "默认URL已更新为: %s",
+  "feedback.url.not_found": "列表中未找到URL: %s",
+  "feedback.url.removed": "已移除URL: %s",
+  "feedback.player_or_world_not_available": "玩家或世界不可用。",
+  "command.urladd.description": "向列表中添加一个新的URL。",
+  "command.urlremove.description": "从列表中移除一个已有的URL。",
+  "command.urllist.description": "列出所有可用的URL。",
+  "command.urlset.description": "设置默认URL。",
+  "command.webmapviewoption.description": "切换Web地图视图选项。",
+  "key.webmapview.open_basic_browser": "打开内置网页地图",
+  "category.webmapview": "网页地图浏览"
+
+}
