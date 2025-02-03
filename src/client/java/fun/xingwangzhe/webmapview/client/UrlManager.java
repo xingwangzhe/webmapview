@@ -30,6 +30,7 @@ public class UrlManager {
             urlList.add(url);
             saveUrls(); // 保存更新后的URL列表到文件
             sendFeedback(Text.translatable("feedback.url.added", url)); // 向玩家发送反馈
+            sendFeedback("这是一个测试");
         } else {
             sendFeedback(Text.translatable("feedback.url.exists", url)); // 如果URL已存在，则通知玩家
         }

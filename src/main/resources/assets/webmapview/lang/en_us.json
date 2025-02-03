@@ -11,5 +11,8 @@
   "command.urlset.description": "Set the default URL.",
   "command.webmapviewoption.description": "Toggle web map view option.",
   "key.webmapview.open_basic_browser": "open_browser",
-  "category.webmapview": "Webmapview"
+  "category.webmapview": "Webmapview",
+  "modmenu.nameTranslation.webmapview": "Webmapview",
+  "modmenu.descriptionTranslation.webmapview": "WebmapView allows players to view web map services (squaremap) through an in-game browser interface, supporting features like custom URLs",
+  "modmenu.afadian": "afadian"
 }

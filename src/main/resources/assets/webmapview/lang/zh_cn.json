@@ -11,6 +11,8 @@
   "command.urlset.description": "设置默认URL。",
   "command.webmapviewoption.description": "切换Web地图视图选项。",
   "key.webmapview.open_basic_browser": "打开内置网页地图",
-  "category.webmapview": "网页地图浏览"
-
+  "category.webmapview": "网页地图浏览",
+  "modmenu.nameTranslation.webmapview": "网页地图浏览",
+  "modmenu.descriptionTranslation.webmapview": "WebmapView允许玩家通过游戏内浏览器界面查看 Web 地图服务（squaremap），支持自定义 URL 等功能",
+  "modmenu.afadian": "爱发电"
 }
