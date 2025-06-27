@@ -19,6 +19,44 @@ loom {
             sourceSet sourceSets.client
         }
     }
+
+    // 启用热重载支持
+    runs {
+        client {
+            client()
+            configName = "Minecraft Client"
+            ideConfigGenerated = true
+            runDir = "run"
+
+            // 添加热重载JVM参数（移除JVMCI相关参数）
+            vmArgs(
+                "-Djdk.attach.allowAttachSelf=true",
+                "-XX:+EnableDynamicAgentLoading",
+                "-Dmixin.hotSwap=true",
+                "-Dmixin.checks.interfaces=true",
+                "-Dmixin.debug.export=true"
+            )
+
+            // 启用开发环境特性
+            property "fabric.development", "true"
+            property "fabric.remapClasspathFile", "true"
+        }
+
+        server {
+            server()
+            configName = "Minecraft Server"
+            ideConfigGenerated = true
+            runDir = "run"
+
+            // 服务器端热重载参数（移除JVMCI相关参数）
+            vmArgs(
+                "-Djdk.attach.allowAttachSelf=true",
+                "-XX:+EnableDynamicAgentLoading"
+            )
+
+            property "fabric.development", "true"
+        }
+    }
 }
 
 fabricApi {
