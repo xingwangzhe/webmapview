@@ -1,7 +1,6 @@
 [en](README.md)
 # WebmapView 模组
 
-Minecraft:1.20.1
 
 这是一个为Minecraft设计的Fabric模组，允许玩家通过游戏内的浏览器界面查看网页地图服务（squaremap），并支持自定义URL。
 
