@@ -97,14 +97,12 @@ public class WebmapviewClient implements ClientModInitializer {
                     ClientCommandManager.literal("webmapview")
                             .then(ClientCommandManager.literal("help")
                                     .executes(context -> {
-                                        StringBuilder helpMessage = new StringBuilder();
-                                        helpMessage.append("/urladd: ").append(Text.translatable("command.urladd.description").getString()).append("\n")
-                                                .append("/urlremove: ").append(Text.translatable("command.urlremove.description").getString()).append("\n")
-                                                .append("/urllist: ").append(Text.translatable("command.urllist.description").getString()).append("\n")
-                                                .append("/urlset: ").append(Text.translatable("command.urlset.description").getString()).append("\n")
-                                                .append("/webmapviewoption: ").append(Text.translatable("command.webmapviewoption.description").getString()).append("\n");
-                                        ;
-                                        sendFeedback((helpMessage.toString()) );
+                                        String helpMessage = "/urladd: " + Text.translatable("command.urladd.description").getString() + "\n" +
+                                                "/urlremove: " + Text.translatable("command.urlremove.description").getString() + "\n" +
+                                                "/urllist: " + Text.translatable("command.urllist.description").getString() + "\n" +
+                                                "/urlset: " + Text.translatable("command.urlset.description").getString() + "\n" +
+                                                "/webmapviewoption: " + Text.translatable("command.webmapviewoption.description").getString() + "\n";
+                                        sendFeedback(helpMessage);
                                         return 1;
                                     })
                             )
@@ -126,9 +124,28 @@ public class WebmapviewClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (keyBinding.wasPressed()) {
                 if (!(minecraft.currentScreen instanceof BasicBrowser)) {
-                    minecraft.setScreen(new BasicBrowser(
-                            Text.literal("Basic Browser")
-                    ));
+                    // 异步打开浏览器，避免阻塞游戏
+                    CompletableFuture.runAsync(() -> {
+                        minecraft.execute(() -> {
+                            // 更安全的鼠标聚焦清除方式，防止OpenGL错误
+                            try {
+                                if (minecraft.mouse != null && minecraft.getWindow() != null) {
+                                    // 确保窗口处于正确状态
+                                    if (minecraft.getWindow().getHandle() != 0) {
+                                        minecraft.mouse.unlockCursor();
+                                        // 重置鼠标状态
+                                    }
+                                }
+                            } catch (Exception e) {
+                                System.err.println("按键处理时鼠标状态清理失败: " + e.getMessage());
+                            }
+
+                            // 创建并显示浏览器窗口
+                            minecraft.setScreen(new BasicBrowser(
+                                    Text.literal("Basic Browser")
+                            ));
+                        });
+                    });
                 }
             }
         });
@@ -150,5 +167,4 @@ public class WebmapviewClient implements ClientModInitializer {
 //            ));
 //        }
 //    }
-
 
