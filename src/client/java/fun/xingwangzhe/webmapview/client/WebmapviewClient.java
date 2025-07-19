@@ -65,7 +65,7 @@ public class WebmapviewClient implements ClientModInitializer {
             return true;
 
         } catch (Exception e) {
-            System.err.println("资源包状态检测失败: " + e.getMessage());
+            System.err.println(Text.translatable("debug.resource_pack.check_failed", e.getMessage()).getString());
             return false;
         }
     }
@@ -171,22 +171,22 @@ public class WebmapviewClient implements ClientModInitializer {
                     if (!isResourcePackFullyLoaded()) {
                         // 如果资源包未完全加载，给玩家提示
                         if (minecraft.player != null) {
-                            minecraft.player.sendMessage(Text.literal("资源包正在加载中，请稍后再试..."), false);
+                            minecraft.player.sendMessage(Text.translatable("browser.resource_pack.not_loaded"), false);
                         }
-                        System.out.println("资源包未完全加载，拒绝打开浏览器");
+                        System.out.println(Text.translatable("debug.key_handler.resource_not_ready").getString());
                         return;
                     }
 
                     // 资源包已完全加载，允许打开浏览器
                     try {
-                        System.out.println("资源包已加载完成，打开浏览器");
-                        minecraft.setScreen(new BasicBrowser(Text.literal("Basic Browser")));
+                        System.out.println(Text.translatable("browser.resource_pack.ready").getString());
+                        minecraft.setScreen(new BasicBrowser(Text.translatable("browser.title")));
 
                     } catch (Exception e) {
-                        System.err.println("按键处理时浏览器创建失败: " + e.getMessage());
+                        System.err.println(Text.translatable("debug.key_handler.creation_failed", e.getMessage()).getString());
                         // 发送错误反馈给玩家
                         if (minecraft.player != null) {
-                            minecraft.player.sendMessage(Text.literal("浏览器打开失败，请重试"), false);
+                            minecraft.player.sendMessage(Text.translatable("browser.creation.failed"), false);
                         }
                     }
                 }

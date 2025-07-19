@@ -27,11 +27,10 @@ public class UrlManager {
      * @param url 要添加的URL字符串
      */
     public static void addUrl(String url) {
-        if (!urlList.contains(url)) { // 确保不重复添加相同的URL
+        if (!urlList.contains(url)) { // 确保不重��添加相同的URL
             urlList.add(url);
             saveUrls(); // 保存更新后的URL列表到文件
             sendFeedback(Text.translatable("feedback.url.added", url)); // 向玩家发送反馈
-            sendFeedback("这是一个测试");
         } else {
             sendFeedback(Text.translatable("feedback.url.exists", url)); // 如果URL已存在，则通知玩家
         }
@@ -68,7 +67,7 @@ public class UrlManager {
     }
 
     /**
-     * 将当前的URL列表保存到文件中。
+     * 将当前的URL列表保存到文件���。
      */
     private static void saveUrls() {
         Path configPath = getConfigDirectory().resolve(URL_FILE_NAME); // 获取配置文件路径
@@ -153,13 +152,17 @@ public class UrlManager {
      * @param message 要发送的消息
      */
     public static void sendFeedback(String message) {
-        MinecraftClient.getInstance().player.sendMessage(Text.of(message), false);
+        if (MinecraftClient.getInstance().player != null) {
+            MinecraftClient.getInstance().player.sendMessage(Text.of(message), false);
+        }
     }
+
     public static void sendFeedback(Text textMessage) {
         if (MinecraftClient.getInstance().player != null) {
             MinecraftClient.getInstance().player.sendMessage(textMessage, false);
         }
     }
+
     public static void removeUrl(String url) {
         if (urlList.remove(url)) { // 如果成功移除URL
             saveUrls(); // 保存更新后的URL列表到文件
