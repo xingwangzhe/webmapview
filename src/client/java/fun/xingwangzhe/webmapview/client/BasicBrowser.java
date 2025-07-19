@@ -22,6 +22,15 @@ public class BasicBrowser extends Screen {
     private boolean isInitializing = false;
     private boolean initializationFailed = false;
 
+    // 添加资源包状态检测
+    private boolean resourcesReloading = false;
+    private long lastResourceReloadTime = 0;
+
+    // 添加自动恢复机制
+    private static int retryCount = 0;
+    private static final int MAX_RETRY_COUNT = 2;
+    private boolean isAutoRecovering = false;
+
     private final MinecraftClient minecraft = MinecraftClient.getInstance();
 
     public BasicBrowser(Text title) {
@@ -32,12 +41,110 @@ public class BasicBrowser extends Screen {
     protected void init() {
         super.init();
 
-        // 完全禁用光标管理，让Minecraft自己处理
-        // manageCursorState();
-
         if (browser == null && !isInitializing) {
-            initializeBrowserAsync();
+            // 检测资源包状态后再初始化浏览器
+            if (isResourcePackReady()) {
+                initializeBrowserAsync();
+            } else {
+                // 如果资源包未准备好，延迟初始化
+                waitForResourcePackAndInitialize();
+            }
         }
+    }
+
+    /**
+     * 检测资源包是否已完全加载
+     */
+    private boolean isResourcePackReady() {
+        try {
+            // 检查基本资源管理器状态
+            if (minecraft.getResourceManager() == null) {
+                return false;
+            }
+
+            // 检查纹理管理器状态
+            if (minecraft.getTextureManager() == null) {
+                return false;
+            }
+
+            // 检查字体管理器状态
+            if (minecraft.textRenderer == null) {
+                return false;
+            }
+
+            // 检查窗口状态
+            if (minecraft.getWindow() == null || minecraft.getWindow().getHandle() == 0) {
+                return false;
+            }
+
+            // 检查最近是否发生过资源重新加载
+            long currentTime = System.currentTimeMillis();
+            if (currentTime - lastResourceReloadTime < 2000) { // 增加等待时间到2秒
+                return false;
+            }
+
+            // 检查资源包是否正在重新加载
+            if (resourcesReloading) {
+                return false;
+            }
+
+            return true;
+        } catch (Exception e) {
+            System.err.println("资源包状态检测失败: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 等待资源包完全加载后初始化浏览器
+     */
+    private void waitForResourcePackAndInitialize() {
+        resourcesReloading = true;
+        System.out.println("资源包未完全加载，等待加载完成...");
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                int maxRetries = 30; // 最多等待15秒 (30 * 500ms)
+                int retryCount = 0;
+
+                while (retryCount < maxRetries && !isResourcePackReady()) {
+                    try {
+                        Thread.sleep(500);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                    retryCount++;
+                }
+
+                // 额外等待确保稳定
+                if (!Thread.currentThread().isInterrupted()) {
+                    try {
+                        Thread.sleep(1000); // 额外等待1秒确保完全稳定
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+
+                minecraft.execute(() -> {
+                    resourcesReloading = false;
+                    lastResourceReloadTime = System.currentTimeMillis();
+
+                    if (isResourcePackReady()) {
+                        System.out.println("资源包加载完成，开始初始化浏览器");
+                        initializeBrowserAsync();
+                    } else {
+                        System.err.println("等待超时，资源包可能未完全加载");
+                        initializationFailed = true;
+                    }
+                });
+
+            } catch (Exception e) {
+                resourcesReloading = false;
+                initializationFailed = true;
+                System.err.println("等待资源包加载时发生错误: " + e.getMessage());
+            }
+        });
     }
 
     private void initializeBrowserAsync() {
@@ -62,20 +169,185 @@ public class BasicBrowser extends Screen {
                             resizeBrowser();
                             browser.setFocus(true);
                             isInitializing = false;
+                            // 成功初始化，重置重试计数器
+                            retryCount = 0;
+                            System.out.println("浏览器初始化成功");
                         } else {
-                            initializationFailed = true;
-                            isInitializing = false;
+                            System.err.println("MCEF.createBrowser 返回 null，可能是资源包未完全加载，开始自动恢复");
+                            handleInitializationFailure();
                         }
                     } catch (Exception e) {
-                        System.err.println("浏览器初始化失败 (主线程): " + e.getMessage());
-                        initializationFailed = true;
-                        isInitializing = false;
+                        System.err.println("浏览器初始化失败 (主线程): " + e.getMessage() + "，开始自动恢复");
+                        handleInitializationFailure();
                     }
                 });
             } catch (Exception e) {
-                System.err.println("浏览器初始化失败 (异步线程): " + e.getMessage());
+                System.err.println("浏览器初始化失败 (异步线程): " + e.getMessage() + "，开始自动恢复");
+                minecraft.execute(this::handleInitializationFailure);
+            }
+        });
+    }
+
+    /**
+     * 处理初始化失败，决定是否进行自动恢复
+     */
+    private void handleInitializationFailure() {
+        isInitializing = false;
+
+        // 立即尝试自动恢复，不管是第几次失败
+        if (retryCount < MAX_RETRY_COUNT && !isAutoRecovering) {
+            retryCount++;
+            System.out.println("浏览器初始化失败，立即启动自动恢复流程 (第" + retryCount + "次，最多" + MAX_RETRY_COUNT + "次)");
+
+            // 发送提示消息给玩家
+            if (minecraft.player != null) {
+                minecraft.player.sendMessage(Text.literal("§6检测到浏览器初始化失败，正在自动修复资源包... (" + retryCount + "/" + MAX_RETRY_COUNT + ")"), false);
+            }
+
+            // 立即开始自动恢复，不等待
+            startAutoRecovery();
+        } else {
+            // 达到最大重试次数或已经在恢复中，标记为最终失败
+            initializationFailed = true;
+            isAutoRecovering = false;
+
+            if (retryCount >= MAX_RETRY_COUNT) {
+                System.err.println("已达到最大重试次数 (" + MAX_RETRY_COUNT + ")，浏览器初始化最终失败");
+                if (minecraft.player != null) {
+                    minecraft.player.sendMessage(Text.literal("§c浏览器初始化失败，已尝试 " + MAX_RETRY_COUNT + " 次自动修复。"), false);
+                    minecraft.player.sendMessage(Text.literal("§e请手动按 F3+T 重新加载资源包，或检查MCEF配置"), false);
+                }
+            } else {
+                System.err.println("浏览器初始化失败");
+                if (minecraft.player != null) {
+                    minecraft.player.sendMessage(Text.literal("§c浏览器初始化失败，请检查MCEF设置"), false);
+                }
+            }
+        }
+    }
+
+    /**
+     * 开始自动恢复流程：模拟按下F3+T来刷新资源包
+     */
+    private void startAutoRecovery() {
+        isAutoRecovering = true;
+
+        System.out.println("开始自动恢复流程：模拟F3+T刷新资源包");
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                // 等待一小段时间确保状态稳定
+                Thread.sleep(500);
+
+                minecraft.execute(() -> {
+                    try {
+                        // 模拟按下F3+T���合键来重新加载资源包
+                        triggerResourcePackReload();
+
+                        // 等待资源包重新加载完成后重试初始化
+                        waitForRecoveryAndRetry();
+
+                    } catch (Exception e) {
+                        System.err.println("自动恢复流程失败: " + e.getMessage());
+                        isAutoRecovering = false;
+                        initializationFailed = true;
+                    }
+                });
+
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                isAutoRecovering = false;
                 initializationFailed = true;
-                isInitializing = false;
+            }
+        });
+    }
+
+    /**
+     * 触发资源包重新加载 (模拟F3+T)
+     */
+    private void triggerResourcePackReload() {
+        try {
+            System.out.println("触发资源包重新加载...");
+
+            // 设置资源包重新加载状态
+            resourcesReloading = true;
+            lastResourceReloadTime = System.currentTimeMillis();
+
+            // 调用Minecraft的资源包重新加载方法
+            if (minecraft.getResourcePackManager() != null) {
+                minecraft.reloadResources();
+                System.out.println("已触发资源包重新加载");
+            } else {
+                System.err.println("无法获取资源包管理器");
+                throw new RuntimeException("资源包管理器不可用");
+            }
+
+        } catch (Exception e) {
+            System.err.println("触发资源包重新加载失败: " + e.getMessage());
+            throw e;
+        }
+    }
+
+    /**
+     * 等待恢复完成后重新尝试初始化浏览器
+     */
+    private void waitForRecoveryAndRetry() {
+        CompletableFuture.runAsync(() -> {
+            try {
+                System.out.println("等待资源包重新加载完成...");
+
+                // 等待资源包重新加载完成
+                int maxWaitTime = 60; // 最多等待30秒 (60 * 500ms)
+                int waitCount = 0;
+
+                while (waitCount < maxWaitTime && (resourcesReloading || !isResourcePackReady())) {
+                    try {
+                        Thread.sleep(500);
+                        waitCount++;
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+
+                // 额外等待确保稳定
+                if (!Thread.currentThread().isInterrupted()) {
+                    Thread.sleep(1000);
+                }
+
+                minecraft.execute(() -> {
+                    isAutoRecovering = false;
+                    resourcesReloading = false;
+                    lastResourceReloadTime = System.currentTimeMillis();
+
+                    if (isResourcePackReady()) {
+                        System.out.println("自动恢复完成，重新尝试初始化浏览器");
+                        if (minecraft.player != null) {
+                            minecraft.player.sendMessage(Text.literal("资源包重新加载完成，正在重新初始化浏览器..."), false);
+                        }
+
+                        // 清理之前失败的状态
+                        initializationFailed = false;
+
+                        // 重新尝试初始化
+                        initializeBrowserAsync();
+
+                    } else {
+                        System.err.println("自动恢复失败：资源包仍未准备好");
+                        initializationFailed = true;
+
+                        if (minecraft.player != null) {
+                            minecraft.player.sendMessage(Text.literal("自动修复失败，资源包重新加载未成功"), false);
+                        }
+                    }
+                });
+
+            } catch (Exception e) {
+                System.err.println("等待恢复完成时发生错误: " + e.getMessage());
+                minecraft.execute(() -> {
+                    isAutoRecovering = false;
+                    initializationFailed = true;
+                });
             }
         });
     }
@@ -127,12 +399,35 @@ public class BasicBrowser extends Screen {
 
     @Override
     public void render(DrawContext guiGraphics, int i, int j, float f) {
-        // 完全移除光标管理，避免OpenGL错误
-        // if (!cursorManaged) {
-        //     manageCursorState();
-        // }
-
         super.render(guiGraphics, i, j, f);
+
+        // 如果正在自动恢复，显示恢复状态
+        if (isAutoRecovering) {
+            guiGraphics.fill(BROWSER_DRAW_OFFSET, BROWSER_DRAW_OFFSET,
+                    width - BROWSER_DRAW_OFFSET, height - BROWSER_DRAW_OFFSET,
+                    0xFF004400);
+            guiGraphics.drawCenteredTextWithShadow(textRenderer, "§6正在自动修复浏览器初始化问题...",
+                    width / 2, height / 2 - 30, 0xFFFFFF);
+            guiGraphics.drawCenteredTextWithShadow(textRenderer, "§e正在重新加载资源包 (F3+T)",
+                    width / 2, height / 2 - 10, 0xFFFFFF);
+            guiGraphics.drawCenteredTextWithShadow(textRenderer, "§7尝试次数: " + retryCount + "/" + MAX_RETRY_COUNT,
+                    width / 2, height / 2 + 10, 0xFFAAAA);
+            guiGraphics.drawCenteredTextWithShadow(textRenderer, "§7请等待片刻...",
+                    width / 2, height / 2 + 30, 0xFFAAAA);
+            return;
+        }
+
+        // 如果资源包正在重新加载，显示等待信息
+        if (resourcesReloading) {
+            guiGraphics.fill(BROWSER_DRAW_OFFSET, BROWSER_DRAW_OFFSET,
+                    width - BROWSER_DRAW_OFFSET, height - BROWSER_DRAW_OFFSET,
+                    0xFF444444);
+            guiGraphics.drawCenteredTextWithShadow(textRenderer, "等待资源包完全加载...",
+                    width / 2, height / 2 - 10, 0xFFFFFF);
+            guiGraphics.drawCenteredTextWithShadow(textRenderer, "资源包加载完成后将自动初始化浏览器",
+                    width / 2, height / 2 + 10, 0xFFAAAA);
+            return;
+        }
 
         // 如果正在初始化，显示加载信息
         if (isInitializing) {
@@ -149,10 +444,17 @@ public class BasicBrowser extends Screen {
             guiGraphics.fill(BROWSER_DRAW_OFFSET, BROWSER_DRAW_OFFSET,
                            width - BROWSER_DRAW_OFFSET, height - BROWSER_DRAW_OFFSET,
                            0xFF333333);
-            guiGraphics.drawCenteredTextWithShadow(textRenderer, "浏览器初始化失败",
-                                                 width / 2, height / 2 - 10, 0xFF0000);
-            guiGraphics.drawCenteredTextWithShadow(textRenderer, "请重试或检查MCEF配置",
-                                                 width / 2, height / 2 + 10, 0xFFFF00);
+            guiGraphics.drawCenteredTextWithShadow(textRenderer, "§c浏览器初始化失败",
+                                                 width / 2, height / 2 - 20, 0xFF0000);
+            if (retryCount >= MAX_RETRY_COUNT) {
+                guiGraphics.drawCenteredTextWithShadow(textRenderer, "§e已尝试 " + MAX_RETRY_COUNT + " 次自动修复",
+                                                     width / 2, height / 2, 0xFFFF00);
+                guiGraphics.drawCenteredTextWithShadow(textRenderer, "§f请手动按 F3+T 重新加载资源包",
+                                                     width / 2, height / 2 + 20, 0xFFFFFF);
+            } else {
+                guiGraphics.drawCenteredTextWithShadow(textRenderer, "请重试或检查MCEF配置",
+                                                     width / 2, height / 2 + 10, 0xFFFF00);
+            }
             return;
         }
 
@@ -262,7 +564,7 @@ public class BasicBrowser extends Screen {
             try {
                 browser.sendMouseWheel(mouseX(mouseX), mouseY(mouseY), verticalAmount, 0);
             } catch (Exception e) {
-                // 忽略浏览器交互错误，避免崩溃
+                // 忽略浏览器交���错误，避免崩溃
             }
         }
         return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
@@ -275,7 +577,7 @@ public class BasicBrowser extends Screen {
                 browser.sendKeyPress(keyCode, scanCode, modifiers);
                 browser.setFocus(true);
             } catch (Exception e) {
-                // 忽略浏览��交互错误，避免崩溃
+                // 忽略浏览器交互错误，避免崩溃
             }
         }
         return super.keyPressed(keyCode, scanCode, modifiers);

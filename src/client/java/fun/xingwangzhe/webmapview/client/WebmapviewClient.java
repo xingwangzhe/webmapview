@@ -26,7 +26,50 @@ public class WebmapviewClient implements ClientModInitializer {
         urls.forEach(builder::suggest);
         return builder.buildFuture();
     }
+
     private KeyBinding keyBinding;
+    private static long lastResourcePackCheckTime = 0;
+
+    /**
+     * 检测资源包是否完全加载
+     */
+    private static boolean isResourcePackFullyLoaded() {
+        try {
+            MinecraftClient minecraft = MinecraftClient.getInstance();
+
+            // 基本组件检查
+            if (minecraft.getResourceManager() == null) {
+                return false;
+            }
+
+            if (minecraft.getTextureManager() == null) {
+                return false;
+            }
+
+            if (minecraft.textRenderer == null) {
+                return false;
+            }
+
+            if (minecraft.getWindow() == null || minecraft.getWindow().getHandle() == 0) {
+                return false;
+            }
+
+            // 检查最近是否发生过资源重新加载
+            long currentTime = System.currentTimeMillis();
+            if (currentTime - lastResourcePackCheckTime < 3000) { // 3秒冷却时间
+                return false;
+            }
+
+            // 更新检查时间
+            lastResourcePackCheckTime = currentTime;
+            return true;
+
+        } catch (Exception e) {
+            System.err.println("资源包状态检测失败: " + e.getMessage());
+            return false;
+        }
+    }
+
     @Override
     public void onInitializeClient() {
 //        ClientTickEvents.START_CLIENT_TICK.register((client) -> onTick());
@@ -124,9 +167,19 @@ public class WebmapviewClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (keyBinding.wasPressed()) {
                 if (!(minecraft.currentScreen instanceof BasicBrowser)) {
-                    // 直接在主线程中创建浏览器，避免异步竞争和光标问题,麻痹的不管鼠标了，反正不会崩溃
+                    // 检查资源包是否完全加载
+                    if (!isResourcePackFullyLoaded()) {
+                        // 如果资源包未完全加载，给玩家提示
+                        if (minecraft.player != null) {
+                            minecraft.player.sendMessage(Text.literal("资源包正在加载中，请稍后再试..."), false);
+                        }
+                        System.out.println("资源包未完全加载，拒绝打开浏览器");
+                        return;
+                    }
+
+                    // 资源包已完全加载，允许打开浏览器
                     try {
-                        // 创建并显示浏览器窗口（不在这里操作光标，让BasicBrowser自己管理）
+                        System.out.println("资源包已加载完成，打开浏览器");
                         minecraft.setScreen(new BasicBrowser(Text.literal("Basic Browser")));
 
                     } catch (Exception e) {
@@ -157,4 +210,3 @@ public class WebmapviewClient implements ClientModInitializer {
 //            ));
 //        }
 //    }
-
