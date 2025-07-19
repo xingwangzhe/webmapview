@@ -124,28 +124,18 @@ public class WebmapviewClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (keyBinding.wasPressed()) {
                 if (!(minecraft.currentScreen instanceof BasicBrowser)) {
-                    // 异步打开浏览器，避免阻塞游戏
-                    CompletableFuture.runAsync(() -> {
-                        minecraft.execute(() -> {
-                            // 更安全的鼠标聚焦清除方式，防止OpenGL错误
-                            try {
-                                if (minecraft.mouse != null && minecraft.getWindow() != null) {
-                                    // 确保窗口处于正确状态
-                                    if (minecraft.getWindow().getHandle() != 0) {
-                                        minecraft.mouse.unlockCursor();
-                                        // 重置鼠标状态
-                                    }
-                                }
-                            } catch (Exception e) {
-                                System.err.println("按键处理时鼠标状态清理失败: " + e.getMessage());
-                            }
+                    // 直接在主线程中创建浏览器，避免异步竞争和光标问题,麻痹的不管鼠标了，反正不会崩溃
+                    try {
+                        // 创建并显示浏览器窗口（不在这里操作光标，让BasicBrowser自己管理）
+                        minecraft.setScreen(new BasicBrowser(Text.literal("Basic Browser")));
 
-                            // 创建并显示浏览器窗口
-                            minecraft.setScreen(new BasicBrowser(
-                                    Text.literal("Basic Browser")
-                            ));
-                        });
-                    });
+                    } catch (Exception e) {
+                        System.err.println("按键处理时浏览器创建失败: " + e.getMessage());
+                        // 发送错误反馈给玩家
+                        if (minecraft.player != null) {
+                            minecraft.player.sendMessage(Text.literal("浏览器打开失败，请重试"), false);
+                        }
+                    }
                 }
             }
         });

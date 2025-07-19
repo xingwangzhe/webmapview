@@ -32,18 +32,8 @@ public class BasicBrowser extends Screen {
     protected void init() {
         super.init();
 
-        // 更安全的鼠标聚焦清除方式，防止OpenGL错误
-        try {
-            if (minecraft.mouse != null) {
-                // 确保窗口处于正确状态
-                if (minecraft.getWindow() != null && minecraft.getWindow().getHandle() != 0) {
-                    // 重置鼠标状态
-                    minecraft.mouse.unlockCursor();
-                }
-            }
-        } catch (Exception e) {
-            System.err.println("鼠标聚焦清除失败: " + e.getMessage());
-        }
+        // 完全禁用光标管理，让Minecraft自己处理
+        // manageCursorState();
 
         if (browser == null && !isInitializing) {
             initializeBrowserAsync();
@@ -54,7 +44,7 @@ public class BasicBrowser extends Screen {
         isInitializing = true;
         initializationFailed = false;
 
-        // 异步初始化浏览器
+        // 异步初始化浏览器 - 移除所有光标操作
         CompletableFuture.runAsync(() -> {
             try {
                 // 添加延迟，确保窗口完全初始化
@@ -64,14 +54,9 @@ public class BasicBrowser extends Screen {
                 sendFeedback(url);
                 boolean transparent = false;
 
-                // 在主线程中创建浏览器
+                // 在主线程中创建浏览器 - 不操作光标
                 minecraft.execute(() -> {
                     try {
-                        // 再次确保鼠标状态正确
-                        if (minecraft.mouse != null && minecraft.getWindow() != null) {
-                            minecraft.mouse.unlockCursor();
-                        }
-
                         browser = MCEF.createBrowser(url, transparent);
                         if (browser != null) {
                             resizeBrowser();
@@ -127,14 +112,8 @@ public class BasicBrowser extends Screen {
 
     @Override
     public void close() {
-        // 关闭浏览器前清理鼠标状态
-        try {
-            if (minecraft.mouse != null) {
-                minecraft.mouse.unlockCursor();
-            }
-        } catch (Exception e) {
-            System.err.println("关闭时鼠标状态清理失败: " + e.getMessage());
-        }
+        // 完全移除光标恢复操作
+        // restoreCursorState();
 
         if (browser != null) {
             try {
@@ -148,17 +127,10 @@ public class BasicBrowser extends Screen {
 
     @Override
     public void render(DrawContext guiGraphics, int i, int j, float f) {
-        // 在每次渲染前确保鼠标状态正确
-        try {
-            if (minecraft.mouse != null && minecraft.getWindow() != null) {
-                // 确保光标处于正确状态，避免OpenGL错误
-                if (minecraft.mouse.isCursorLocked()) {
-                    minecraft.mouse.unlockCursor();
-                }
-            }
-        } catch (Exception e) {
-            // 静默处理光标错误，避免日志污染
-        }
+        // 完全移除光标管理，避免OpenGL错误
+        // if (!cursorManaged) {
+        //     manageCursorState();
+        // }
 
         super.render(guiGraphics, i, j, f);
 
@@ -254,7 +226,7 @@ public class BasicBrowser extends Screen {
             browser.sendMouseRelease(mouseX(mouseX), mouseY(mouseY), button);
             browser.setFocus(true);
         } catch (Exception e) {
-            // 忽略浏览器交互错误��避免崩溃
+            // 忽略浏览器交互错误，避免崩溃
         }
         return super.mouseReleased(mouseX, mouseY, button);
     }
@@ -303,7 +275,7 @@ public class BasicBrowser extends Screen {
                 browser.sendKeyPress(keyCode, scanCode, modifiers);
                 browser.setFocus(true);
             } catch (Exception e) {
-                // 忽略浏览器交互错误，避免崩溃
+                // 忽略浏览��交互错误，避免崩溃
             }
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
