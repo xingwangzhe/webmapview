@@ -1,0 +1,316 @@
+package fun.xingwangzhe.webmapview.client;
+
+import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.suggestion.Suggestions;
+import com.mojang.brigadier.suggestion.SuggestionsBuilder;
+import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.option.KeyBinding;
+import net.minecraft.text.Text;
+import org.cef.browser.CefBrowser;
+import org.lwjgl.glfw.GLFW;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+import java.io.FileWriter;
+import java.io.IOException;
+import java.util.List;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.concurrent.CompletableFuture;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+
+import static fun.xingwangzhe.webmapview.client.UrlManager.sendFeedback;
+
+
+public class WebmapviewClient implements ClientModInitializer {
+
+
+
+
+    private static CompletableFuture<Suggestions> suggestUrls(CommandContext<?> context, SuggestionsBuilder builder) {
+        List<String> urls = UrlManager.getUrlList();
+        urls.forEach(builder::suggest);
+        return builder.buildFuture();
+    }
+
+    private KeyBinding keyBinding;
+    private static WebmapviewClient instance; // 添加静态实例引用
+    private static long lastResourcePackCheckTime = 0;
+    private Timer playerJsonTimer;
+    private static final String PLAYER_JSON_PATH = System.getProperty("user.dir") + "/run/config/players.json";
+
+    /**
+     * 获取切换浏览器的按键绑定（供BasicBrowser使用）
+     */
+    public static KeyBinding getToggleKeyBinding() {
+        return instance != null ? instance.keyBinding : null;
+    }
+
+    /**
+     * 检查指定的按键是否是切换浏览器的按键
+     */
+    public static boolean isToggleKey(int keyCode) {
+        KeyBinding binding = getToggleKeyBinding();
+        if (binding != null) {
+            return binding.matchesKey(keyCode, 0);
+        }
+        return false;
+    }
+
+    /**
+     * 检测资源包是否完全加载
+     */
+    private static boolean isResourcePackFullyLoaded() {
+        try {
+            MinecraftClient minecraft = MinecraftClient.getInstance();
+
+            // 基本组件检查
+            if (minecraft.getResourceManager() == null) {
+                return false;
+            }
+
+            if (minecraft.getTextureManager() == null) {
+                return false;
+            }
+
+            if (minecraft.textRenderer == null) {
+                return false;
+            }
+
+            if (minecraft.getWindow() == null || minecraft.getWindow().getHandle() == 0) {
+                return false;
+            }
+
+            // 检查最近是否发生过资源重新加载
+            long currentTime = System.currentTimeMillis();
+            if (currentTime - lastResourcePackCheckTime < 3000) { // 3秒冷却时间
+                return false;
+            }
+
+            // 更新检查时间
+            lastResourcePackCheckTime = currentTime;
+            return true;
+
+        } catch (Exception e) {
+            System.err.println(Text.translatable("debug.resource_pack.check_failed", e.getMessage()).getString());
+            return false;
+        }
+    }
+
+    /**
+     * 定时动态生成玩家信息JSON文件
+     */
+    private void startPlayerJsonTimer() {
+        if (playerJsonTimer != null) return;
+        playerJsonTimer = new Timer();
+        playerJsonTimer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                generatePlayerJson();
+            }
+        }, 0, 2000); // 每2秒生成一次
+    }
+
+    private void generatePlayerJson() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.player == null) return;
+
+        JsonObject root = new JsonObject();
+        root.addProperty("max", 200);
+        JsonArray players = new JsonArray();
+
+        JsonObject player = new JsonObject();
+        player.addProperty("uuid", client.player.getUuid().toString().replace("-", ""));
+        player.addProperty("name", "xingwangzhe_");
+        player.addProperty("display_name", "xingwangzhe_");
+        player.addProperty("x", client.player.getX());
+        player.addProperty("z", client.player.getZ());
+        player.addProperty("world", client.player.getWorld().getRegistryKey().getValue().toString());
+        player.addProperty("yaw", client.player.getYaw());
+        player.addProperty("health", (int) client.player.getHealth());
+        player.addProperty("armor", client.player.getArmor());
+        player.addProperty("head_url", "https://cravatar.eu/helmavatar/xingwangzhe_/16");
+        player.addProperty("__virtual", false);
+        player.addProperty("__icon", "arrow");
+        players.add(player);
+
+        root.add("players", players);
+
+        try {
+            java.nio.file.Path path = java.nio.file.Paths.get(PLAYER_JSON_PATH);
+            java.nio.file.Files.createDirectories(path.getParent()); // 确保目录存在
+            try (FileWriter fw = new FileWriter(PLAYER_JSON_PATH)) {
+                fw.write(root.toString());
+            }
+        } catch (IOException e) {
+            System.err.println("[Webmapview] 写入players.json失败: " + e.getMessage());
+        }
+    }
+
+
+
+    @Override
+    public void onInitializeClient() {
+        // 设置静态实例引用，供其他类访问按键绑定
+        instance = this;
+
+//        ClientTickEvents.START_CLIENT_TICK.register((client) -> onTick());
+        // 注册"addturl"命令，用于添加新的URL
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
+            dispatcher.register(
+                    ClientCommandManager.literal("urladd")
+                            .then(ClientCommandManager.argument("url", StringArgumentType.string())
+                                    .executes(context -> {
+                                        String url = StringArgumentType.getString(context, "url");
+                                        UrlManager.addUrl(url); // 添加URL
+                                        return 1; // 命令成功执行
+                                    })
+                            )
+            );
+
+            // 注册“removeurl”命令，用于删除URL
+            dispatcher.register(
+                    ClientCommandManager.literal("urlremove")
+                            .then(ClientCommandManager.argument("url", StringArgumentType.string()).suggests(WebmapviewClient::suggestUrls)
+                                    .executes(context -> {
+                                        String url = StringArgumentType.getString(context, "url");
+                                        UrlManager.removeUrl(url); // 删除URL
+                                        return 1; // 命令成功执行
+                                    })
+                            )
+            );
+
+            // 注册“urllist”命令，用于列出所有已添加的URL
+            dispatcher.register(
+                    ClientCommandManager.literal("urllist")
+                            .executes(context -> {
+                                List<String> urls = UrlManager.getUrlList(); // 获取所有URL
+                                StringBuilder listMessage = new StringBuilder("Available URLs:\n");
+                                for (int i = 0; i < urls.size(); i++) {
+                                    listMessage.append(i + 1).append(": ").append(urls.get(i)).append("\n"); // 格式化输出
+                                }
+                                context.getSource().sendFeedback(Text.of(listMessage.toString())); // 向玩家展示结果
+                                return 1; // 命令成功执行
+                            })
+            );
+            // 注册“urlset”命令，用于设置默认URL
+            dispatcher.register(
+                    ClientCommandManager.literal("urlset")
+                            .then(ClientCommandManager.argument("url", StringArgumentType.string()).suggests(WebmapviewClient::suggestUrls)
+                                    .executes(context -> {
+                                        String url = StringArgumentType.getString(context, "url");
+                                        UrlManager.setDefaultUrl(url); // 设置默认URL
+                                        return 1; // 命令成功执行
+                                    })
+                            )
+            );
+            dispatcher.register(
+                    ClientCommandManager.literal("webmapviewoption")
+                            .then(ClientCommandManager.argument("url", StringArgumentType.string())
+                                    .executes(context -> {
+                                        UrlManager.webmapview = !UrlManager.webmapview;
+                                        if (UrlManager.webmapview) {
+                                            sendFeedback("webmapview is enabled");
+                                        } else {
+                                            sendFeedback("webmapview is not enabled");
+                                        }
+
+                                   return 1; })
+                            )
+            );
+            dispatcher.register(
+                    ClientCommandManager.literal("webmapview")
+                            .then(ClientCommandManager.literal("help")
+                                    .executes(context -> {
+                                        String helpMessage = "/urladd: " + Text.translatable("command.urladd.description").getString() + "\n" +
+                                                "/urlremove: " + Text.translatable("command.urlremove.description").getString() + "\n" +
+                                                "/urllist: " + Text.translatable("command.urllist.description").getString() + "\n" +
+                                                "/urlset: " + Text.translatable("command.urlset.description").getString() + "\n" +
+                                                "/webmapviewoption: " + Text.translatable("command.webmapviewoption.description").getString() + "\n";
+                                        sendFeedback(helpMessage);
+                                        return 1;
+                                    })
+                            )
+            );
+        });
+
+        // 初始化KeyBinding
+        keyBinding = new KeyBinding(
+                "key.webmapview.open_basic_browser",  // 使用唯一标识符
+                GLFW.GLFW_KEY_H,                      // 默认按键
+                "category.webmapview"                       // 分类
+        );
+
+        // 注册KeyBinding
+        KeyBindingHelper.registerKeyBinding(keyBinding);
+
+        final MinecraftClient minecraft = MinecraftClient.getInstance();
+        // 监听客户端tick事件，处理按键输入
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            // 添加调试信息来检查按键绑定是否被检测到
+            if (keyBinding.wasPressed()) {
+                System.out.println("[DEBUG] KeyBinding detected! Current screen: " + (minecraft.currentScreen == null ? "null" : minecraft.currentScreen.getClass().getSimpleName()));
+
+                if(minecraft.currentScreen instanceof BasicBrowser) {
+                    System.out.println("[DEBUG] Closing BasicBrowser");
+                    minecraft.setScreen(null);
+                }
+                else {
+                    System.out.println("[DEBUG] Opening BasicBrowser");
+                    // 检查资源包是否完全加载
+                    if (!isResourcePackFullyLoaded()) {
+                        // 如果资源包未完全加载，给玩家提示
+                        if (minecraft.player != null) {
+                            minecraft.player.sendMessage(Text.translatable("browser.resource_pack.not_loaded"), false);
+                        }
+                        System.out.println(Text.translatable("debug.key_handler.resource_not_ready").getString());
+                        return;
+                    }
+
+                    // 资源包已完全加载，允许打开浏览器
+                    try {
+                        System.out.println(Text.translatable("browser.resource_pack.ready").getString());
+                        minecraft.setScreen(new BasicBrowser(Text.translatable("browser.title")));
+
+                    } catch (Exception e) {
+                        System.err.println(Text.translatable("debug.key_handler.creation_failed", e.getMessage()).getString());
+                        // 发送错误反馈给玩家
+                        if (minecraft.player != null) {
+                            minecraft.player.sendMessage(Text.translatable("browser.creation.failed"), false);
+                        }
+                    }
+                }
+            }
+        });
+        // 初始化MCEF并注入脚本
+
+        // 启动定时生成玩家json
+        startPlayerJsonTimer();
+    }
+    }
+
+    // H key to open a BasicBrowser screen
+//    public static final KeyBinding KEY_MAPPING = new KeyBinding(
+//            "Open Basic Browser", InputUtil.Type.KEYSYM,
+//            GLFW.GLFW_KEY_H, "key.categories.misc"
+//    );
+
+//    public void onTick() {
+//        // Check if our key was pressed
+//        if (KEY_MAPPING.wasPressed() && !(minecraft.currentScreen instanceof BasicBrowser)) {
+//            //Display the web browser UI.
+//            minecraft.setScreen(new BasicBrowser(
+//                    Text.literal("Basic Browser")
+//            ));
+//        }
+//    }
