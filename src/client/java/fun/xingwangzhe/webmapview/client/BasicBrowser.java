@@ -15,6 +15,7 @@ import org.cef.handler.CefLoadHandler;
 import org.cef.network.CefRequest;
 import org.cef.browser.CefFrame;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import static fun.xingwangzhe.webmapview.client.UrlManager.sendFeedback;
@@ -37,10 +38,10 @@ public class BasicBrowser extends Screen {
     private static final int MAX_RETRY_COUNT = 2;
     private boolean isAutoRecovering = false;
     
-    // 定期JavaScript注入相关字段
-    private CompletableFuture<?> periodicInjectionTask;
+    // 添加定期注入控制标志
     private volatile boolean shouldStopInjection = false;
-
+    private volatile boolean injectionSuccessful = false;
+    
     private final MinecraftClient minecraft = MinecraftClient.getInstance();
 
     public BasicBrowser(Text title) {
@@ -52,6 +53,9 @@ public class BasicBrowser extends Screen {
         super.init();
 
         if (browser == null && !isInitializing) {
+            // 启动本地 HTTP 服务
+            API.startLocalHttpServer(8080, List.of()); // 初始玩家列表为空
+
             // 检测资源包状态后再初始化浏览器
             if (isResourcePackReady()) {
                 initializeBrowserAsync();
@@ -60,12 +64,6 @@ public class BasicBrowser extends Screen {
                 waitForResourcePackAndInitialize();
             }
         }
-
-        // 移除所有与 JavaScript 注入相关的代码
-
-        // 删除玩家数据拦截和注入
-        // 删除自动注入本地玩家数据
-        // 删除 JavaScript 到 Java 的日志桥接
     }
 
     /**
@@ -88,7 +86,7 @@ public class BasicBrowser extends Screen {
                 return false;
             }
 
-            // 检��窗口状态
+            // 检��窗口�����态
             if (minecraft.getWindow() == null || minecraft.getWindow().getHandle() == 0) {
                 return false;
             }
@@ -110,6 +108,7 @@ public class BasicBrowser extends Screen {
             return false;
         }
     }
+    
     // 统一的 JavaScript 注入方法
     private void injectJavaScriptContent() {
         if (browser != null) {
@@ -117,15 +116,115 @@ public class BasicBrowser extends Screen {
                 String jsCode = """
                 (function() {
                     console.log('JavaScript注入成功: ' + new Date().toISOString());
-                    // 在这里添加您需要的其他JavaScript代码
+
+                    // 劫持 fetch 方法
+                    const originalFetch = window.fetch;
+                    window.fetch = async function(...args) {
+                        const [url] = args;
+                        console.log('fetch 被调用，URL:', url);
+                        if (typeof url === 'string' && url.includes('/players.json')) {
+                            console.log('拦截到 /players.json 请求');
+
+                            try {
+                                // 获取本地API节点数据 (使用硬编码地址)
+                                const localResponse = await originalFetch("http://localhost:8080/local-players.json");
+                                const localData = await localResponse.json();
+                                console.log('本地API数据:', localData);
+
+                                // 获取服务器原始数据
+                                const serverResponse = await originalFetch.apply(this, args);
+                                const serverData = await serverResponse.json();
+                                console.log('服务器原始数据:', serverData);
+
+                                // 合并数据 - 优先使用本地API节点的数据
+                                const mergedData = {
+                                    ...serverData,
+                                    ...localData,
+                                    players: [
+                                        ...(serverData.players || []),
+                                        ...(localData.players || []).filter(localPlayer => 
+                                            !(serverData.players || []).some(serverPlayer =>                                                 serverPlayer.name === localPlayer.name
+                                            )
+                                        )
+                                    ]
+                                };
+
+                                console.log('合并后数据:', mergedData);
+                                // 打印完整的title/players.json数据
+                                console.log('完整的合并后title/players.json数据:', JSON.stringify(mergedData, null, 2));
+
+                                // 返回合并后的数据
+                                const updatedResponse = new Response(JSON.stringify(mergedData), {
+                                    status: serverResponse.status,
+                                    statusText: serverResponse.statusText,
+                                    headers: serverResponse.headers
+                                });
+                                
+                                return updatedResponse;
+                            } catch (error) {
+                                console.error('数据合并失败:', error);
+                                // 如果合并失败，返回原始服务器数据
+                                return originalFetch.apply(this, args);
+                            }
+                        }
+                        return originalFetch.apply(this, args);
+                    };
+
+                    console.log('fetch 方法已劫持');
                 })();
                 """;
-                browser.executeJavaScript(jsCode, browser.getURL(), 0);
+
+                // 启动定期注入任务直到成功
+                startPeriodicJavaScriptInjection(jsCode);
             } catch (Exception e) {
                 System.err.println("[BasicBrowser] JavaScript注入失败: " + e.getMessage());
             }
         }
     }
+    
+    /**
+     * 启动定期JavaScript注入任务
+     */
+    private void startPeriodicJavaScriptInjection(String jsCode) {
+        // 如果已有任务在运行，先停止它
+        shouldStopInjection = true;
+        injectionSuccessful = false;
+        shouldStopInjection = false;
+        
+        // 启动新的定期注入任务
+        CompletableFuture.runAsync(() -> {
+            int attempts = 0;
+            while (!shouldStopInjection && !injectionSuccessful && attempts < 30) { // 最多尝试30次
+                attempts++;
+                int finalAttempts = attempts;
+                minecraft.execute(() -> {
+                    if (!shouldStopInjection && browser != null) {
+                        try {
+                            browser.executeJavaScript(jsCode, browser.getURL(), 0);
+
+                            System.out.println("[BasicBrowser] JavaScript已注入 (尝试 #" + finalAttempts+ ")");
+                        } catch (Exception e) {
+                            System.err.println("[BasicBrowser] JavaScript注入异常 (尝试 #" + finalAttempts + "): " + e.getMessage());
+                        }
+                    }
+                });
+                
+                try {
+                    Thread.sleep(1000); // 每秒尝试一次
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+            
+            if (injectionSuccessful) {
+                System.out.println("[BasicBrowser] JavaScript注入成功完成");
+            } else if (attempts >= 30) {
+                System.err.println("[BasicBrowser] JavaScript注入超时");
+            }
+        });
+    }
+
     /**
      * 等待资源包完全加载后初始化浏览器
      */
@@ -205,8 +304,8 @@ public class BasicBrowser extends Screen {
                             // 注册 ConsoleMessageHandler
                             browser.getClient().addDisplayHandler(new ConsoleMessageHandler());
                             
-                            // 启动定期 JavaScript 注入
-                            startPeriodicJavaScriptInjection();
+                            // 在浏览器初始化时注入 JavaScript
+                            injectJavaScriptContent();
 
                         } else {
                             System.err.println(Text.translatable("debug.browser.mcef_null").getString());
@@ -224,46 +323,8 @@ public class BasicBrowser extends Screen {
         });
     }
     
-    // 定期 JavaScript 注入任务
-    private void startPeriodicJavaScriptInjection() {
-        if (periodicInjectionTask != null) {
-            shouldStopInjection = true;
-            periodicInjectionTask.cancel(false);
-        }
-        
-        shouldStopInjection = false;
-        
-        periodicInjectionTask = CompletableFuture.runAsync(() -> {
-            while (!shouldStopInjection && !Thread.currentThread().isInterrupted()) {
-                try {
-                    // 每隔1秒执行一次 JavaScript 注入
-                    Thread.sleep(1000);
-                    
-                    // 在主线程中执行 JavaScript 注入
-                    minecraft.execute(() -> {
-                        if (browser != null && !shouldStopInjection) {
-                            try {
-                                String jsCode = "console.log('定期JavaScript注入: ' + new Date().toISOString());";
-                                browser.executeJavaScript(jsCode, browser.getURL(), 0);
-                            } catch (Exception e) {
-                                System.err.println("[BasicBrowser] 定期JavaScript注入失败: " + e.getMessage());
-                            }
-                        }
-                    });
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                } catch (Exception e) {
-                    System.err.println("[BasicBrowser] 定期注入循环异常: " + e.getMessage());
-                }
-            }
-            
-            System.out.println("[BasicBrowser] 定期JavaScript注入任务已停止");
-        });
-    }
-
     /**
-     * 处理初始化失败，决定是否进行自动恢复
+     * 处理初始化失败，决定是否进行自��恢复
      */
     private void handleInitializationFailure() {
         isInitializing = false;
@@ -458,12 +519,8 @@ public class BasicBrowser extends Screen {
 
     @Override
     public void close() {
-        // 停止定期注入任务
-        if (periodicInjectionTask != null) {
-            shouldStopInjection = true;
-            periodicInjectionTask.cancel(false);
-            periodicInjectionTask = null;
-        }
+        // 停止本地 HTTP 服务
+        API.stopLocalHttpServer();
 
         // 完全移除光标恢复操作
         // restoreCursorState();
@@ -502,7 +559,7 @@ public class BasicBrowser extends Screen {
             return;
         }
 
-        // 如果资源包正在重新加载，显示等待信息
+        // 如果资源包正在重新加载，显示���待信息
         if (resourcesReloading) {
             guiGraphics.fill(BROWSER_DRAW_OFFSET, BROWSER_DRAW_OFFSET,
                     width - BROWSER_DRAW_OFFSET, height - BROWSER_DRAW_OFFSET,
@@ -644,7 +701,7 @@ public class BasicBrowser extends Screen {
             browser.sendMousePress(mouseX(mouseX), mouseY(mouseY), button);
             browser.setFocus(true);
         } catch (Exception e) {
-            // 忽略浏览器交互错误，避免崩溃
+            // 忽略浏览器交互错误，避免崩���
         }
         return super.mouseClicked(mouseX, mouseY, button);
     }
@@ -702,7 +759,7 @@ public class BasicBrowser extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        // 处理ESC键关闭浏览器
+        // ��理ESC键关闭浏览器
         if (keyCode == 256) { // GLFW.GLFW_KEY_ESCAPE = 256
             this.close();
             return true;

@@ -131,13 +131,16 @@ public class PlayerInformation {
         this.icon = icon;
     }
 
-    public static String generatePlayerJson(List<PlayerInformation> players, int maxPlayers) {
+    public static String generatePlayerJson(List<PlayerInformation> players, int maxPlayers, boolean includeVirtual) {
         Gson gson = new Gson();
         JsonObject root = new JsonObject();
         root.addProperty("max", maxPlayers);
 
         JsonArray playersArray = new JsonArray();
         for (PlayerInformation player : players) {
+            if (!includeVirtual && player.isVirtual()) {
+                continue;
+            }
             JsonObject playerJson = new JsonObject();
             playerJson.addProperty("uuid", player.getUuid());
             playerJson.addProperty("name", player.getName());
@@ -149,6 +152,7 @@ public class PlayerInformation {
             playerJson.addProperty("yaw", player.getYaw());
             playerJson.addProperty("health", player.getHealth());
             playerJson.addProperty("armor", player.getArmor());
+            playerJson.addProperty("is_virtual", player.isVirtual());
             playersArray.add(playerJson);
         }
 
