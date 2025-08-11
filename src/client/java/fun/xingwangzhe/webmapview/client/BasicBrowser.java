@@ -8,7 +8,9 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.render.*;
 import net.minecraft.text.Text;
+import org.cef.CefSettings;
 import org.cef.browser.CefBrowser;
+import org.cef.handler.CefDisplayHandler;
 import org.cef.handler.CefLoadHandler;
 import org.cef.network.CefRequest;
 import org.cef.browser.CefFrame;
@@ -181,12 +183,15 @@ public class BasicBrowser extends Screen {
                             retryCount = 0;
                             System.out.println(Text.translatable("debug.browser.initialization.success").getString());
 
+                            // 注册 ConsoleMessageHandler
+                            browser.getClient().addDisplayHandler(new ConsoleMessageHandler());
+
                             // 添加加载完成事件监听器
                             browser.getClient().addLoadHandler(new CefLoadHandler() {
                                 @Override
                                 public void onLoadEnd(CefBrowser cefBrowser, CefFrame frame, int httpStatusCode) {
-                                    System.out.println("[BasicBrowser] 网页加载完成，开始注入脚本。");
-                                    injectJavaScript(cefBrowser, frame);
+                                    System.out.println("[BasicBrowser] 网页加载完成。HTTP状态码: " + httpStatusCode);
+                                    System.out.println("[BasicBrowser] 当前页面URL: " + frame.getURL());
                                 }
 
                                 @Override
@@ -196,12 +201,12 @@ public class BasicBrowser extends Screen {
 
                                 @Override
                                 public void onLoadStart(CefBrowser browser, CefFrame frame, CefRequest.TransitionType transitionType) {
-                                    System.out.println("[BasicBrowser] 网页开始加载。");
+                                    System.out.println("[BasicBrowser] 网页开始加载。URL: " + frame.getURL());
                                 }
 
                                 @Override
                                 public void onLoadError(CefBrowser browser, CefFrame frame, ErrorCode errorCode, String errorText, String failedUrl) {
-                                    System.err.println("[BasicBrowser] 网页加载错误: " + errorText);
+                                    System.err.println("[BasicBrowser] 网页加载错误: " + errorText + " 错误码: " + errorCode + " 失败URL: " + failedUrl);
                                 }
                             });
                         } else {
@@ -218,25 +223,6 @@ public class BasicBrowser extends Screen {
                 minecraft.execute(this::handleInitializationFailure);
             }
         });
-    }
-
-    private void injectJavaScript(CefBrowser cefBrowser, CefFrame frame) {
-        System.out.println("[BasicBrowser] 开始注入 JavaScript。");
-        String script = "(() => {" +
-            "    document.body.style.backgroundColor = '#f0f0f0';" +
-            "    document.title = 'MCEF 注入示例';" +
-            "    const button = document.createElement('button');" +
-            "    button.textContent = 'MCEF 注入按钮';" +
-            "    button.style.position = 'fixed';" +
-            "    button.style.top = '20px';" +
-            "    button.style.right = '20px';" +
-            "    button.style.padding = '10px';" +
-            "    button.style.zIndex = '9999';" +
-            "    button.onclick = () => alert('按钮被点击！来自MCEF注入的JS');" +
-            "    document.body.appendChild(button);" +
-            "})();";
-        cefBrowser.executeJavaScript(script, frame.getURL(), 0);
-        System.out.println("[BasicBrowser] JavaScript 注入完成。");
     }
 
     /**
@@ -575,35 +561,14 @@ public class BasicBrowser extends Screen {
      * 向页面注入玩家数据
      */
     public void injectPlayerData(String playerDataJson) {
-        if (browser != null) {
-            String script = String.format("window.updatePlayerData(%s);", playerDataJson);
-            browser.executeJavaScript(script,"",0);
-        }
+        // 删除所有JavaScript注入相关代码
     }
 
     /**
      * 拦截并注入本地生成的玩家数据到指定的 URL。
      */
     private void interceptAndInjectPlayerData() {
-        if (browser != null) {
-            String script = "(() => {" +
-                "    const originalFetch = window.fetch;" +
-                "    window.fetch = async function(resource, config) {" +
-                "        if (typeof resource === 'string' && resource.includes('tiles/players.json')) {" +
-                "            console.log('[Intercept] Fetching players.json:', resource);" +
-                "            const localData = " + generatePlayerJsonScript() + ";" +
-                "            return new Response(JSON.stringify(localData), {" +
-                "                status: 200," +
-                "                headers: { 'Content-Type': 'application/json' }" +
-                "            });" +
-                "        }" +
-                "        return originalFetch.apply(this, arguments);" +
-                "    };" +
-                "    console.log('[Intercept] Fetch override installed.');" +
-                "})();";
-
-            browser.executeJavaScript(script, "", 0);
-        }
+        // 删除所有JavaScript注入相关代码
     }
 
     /**
@@ -611,50 +576,19 @@ public class BasicBrowser extends Screen {
      * @return JavaScript 格式的 JSON 数据
      */
     private String generatePlayerJsonScript() {
-        // 示例 JSON 数据，可以替换为动态生成的内容
-        return "{" +
-            "\"max\": 200," +
-            "\"players\": [" +
-            "    {\"world\": \"minecraft_overworld\", \"armor\": 0, \"name\": \"BVVD\", \"x\": 230150, \"y\": 66, \"health\": 40, \"z\": -60139, \"display_name\": \"BVVD\", \"uuid\": \"289877384c6c30c1aa11d6d8ff63d871\", \"yaw\": 62}" +
-            "]}";
+        // 删除所有JavaScript注入相关代码
+        return "";
     }
 
     /**
      * 调用 PlayerInformation 的本地 JSON 生成方法，并注入到浏览器。
      */
-    private void injectLocalPlayerData() {
-        if (browser != null) {
-            String localPlayerJson = PlayerInformation.generateLocalPlayerJson();
-            String script = String.format(
-                "(() => {" +
-                "    const localData = %s;" +
-                "    window.updatePlayerData(localData);" +
-                "    console.log('[Inject] Local player data injected:', localData);" +
-                "})();",
-                localPlayerJson
-            );
-            browser.executeJavaScript(script, "", 0);
-        }
-    }
 
     /**
      * 添加 JavaScript 到 Java 的日志桥接
      */
     private void addJavaScriptToJavaLogging() {
-        if (browser != null) {
-            String script = "(() => {" +
-                "    window.java = {" +
-                "        log: (message) => {" +
-                "            console.log('[JavaScript -> Java] ' + message);" +
-                "            fetch('http://localhost:8080/log', {" +
-                "                method: 'POST'," +
-                "                body: JSON.stringify({message})" +
-                "            });" +
-                "        }" +
-                "    };" +
-                "})();";
-            browser.executeJavaScript(script, "", 0);
-        }
+        // 删除所有JavaScript注入相关代码
     }
 
     @Override
@@ -711,15 +645,15 @@ public class BasicBrowser extends Screen {
 
 
     @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+    public boolean mouseScrolled(double mouseX, double Y, double horizontalAmount, double verticalAmount) {
         if (browser != null && browser.getRenderer() != null) {
             try {
-                browser.sendMouseWheel(mouseX(mouseX), mouseY(mouseY), verticalAmount, 0);
+                browser.sendMouseWheel(mouseX(mouseX), mouseY(Y), verticalAmount, 0);
             } catch (Exception e) {
                 // 忽略浏览器交互错误，避免崩溃
             }
         }
-        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+        return super.mouseScrolled(mouseX, Y, horizontalAmount, verticalAmount);
     }
 
     @Override
@@ -754,33 +688,30 @@ public class BasicBrowser extends Screen {
     }
 
     private void addLoadHandlerForJavaScriptInjection() {
-        browser.getClient().addLoadHandler(new CefLoadHandler() {
-            @Override
-            public void onLoadEnd(CefBrowser cefBrowser, CefFrame frame, int httpStatusCode) {
-                String script = "(() => {" +
-                    "    document.body.style.backgroundColor = '#f0f0f0';" +
-                    "    document.title = 'MCEF 注入示例';" +
-                    "    const button = document.createElement('button');" +
-                    "    button.textContent = 'MCEF 注入按钮';" +
-                    "    button.style.position = 'fixed';" +
-                    "    button.style.top = '20px';" +
-                    "    button.style.right = '20px';" +
-                    "    button.style.padding = '10px';" +
-                    "    button.style.zIndex = '9999';" +
-                    "    button.onclick = () => alert('按钮被点击！来自MCEF注入的JS');" +
-                    "    document.body.appendChild(button);" +
-                    "})();";
-                cefBrowser.executeJavaScript(script, frame.getURL(), 0);
-            }
+        // 删除所有JavaScript注入相关代码
+    }
 
-            @Override
-            public void onLoadingStateChange(CefBrowser browser, boolean isLoading, boolean canGoBack, boolean canGoForward) {}
+    // 在 BasicBrowser 类中添加一个内部类实现 CefDisplayHandler
+    private static class ConsoleMessageHandler implements CefDisplayHandler {
+        @Override
+        public boolean onConsoleMessage(CefBrowser browser, CefSettings.LogSeverity level, String message, String source, int line) {
+            System.out.printf("[Browser Console] Level: %s, Message: %s, Source: %s, Line: %d%n", level, message, source, line);
+            return false; // 返回 false 表示消息仍会显示在浏览器控制台中
+        }
 
-            @Override
-            public void onLoadStart(CefBrowser browser, CefFrame frame, CefRequest.TransitionType transitionType) {}
+        @Override
+        public void onAddressChange(CefBrowser browser, CefFrame frame, String url) {}
 
-            @Override
-            public void onLoadError(CefBrowser browser, CefFrame frame, ErrorCode errorCode, String errorText, String failedUrl) {}
-        });
+        @Override
+        public void onTitleChange(CefBrowser browser, String title) {}
+
+        @Override
+        public boolean onTooltip(CefBrowser browser, String text) { return false; }
+
+        @Override
+        public void onStatusMessage(CefBrowser browser, String value) {}
+
+        @Override
+        public boolean onCursorChange(CefBrowser browser, int cursorType) { return false; }
     }
 }

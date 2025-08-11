@@ -213,7 +213,11 @@ public class UrlManager {
         }
 
         // 构建完整的URL
-        StringBuilder fullUrlBuilder = new StringBuilder("https://").append(baseUrl).append("/"); // 添加协议头
+        StringBuilder fullUrlBuilder = new StringBuilder();
+        if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
+            fullUrlBuilder.append("https://");
+        }
+        fullUrlBuilder.append(baseUrl).append("/");
         if (!baseUrl.contains("?")) { // 检查是否已有参数
             fullUrlBuilder.append("?");
         } else {
