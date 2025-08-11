@@ -36,6 +36,10 @@ public class BasicBrowser extends Screen {
     private static int retryCount = 0;
     private static final int MAX_RETRY_COUNT = 2;
     private boolean isAutoRecovering = false;
+    
+    // 定期JavaScript注入相关字段
+    private CompletableFuture<?> periodicInjectionTask;
+    private volatile boolean shouldStopInjection = false;
 
     private final MinecraftClient minecraft = MinecraftClient.getInstance();
 
@@ -106,7 +110,22 @@ public class BasicBrowser extends Screen {
             return false;
         }
     }
-
+    // 统一的 JavaScript 注入方法
+    private void injectJavaScriptContent() {
+        if (browser != null) {
+            try {
+                String jsCode = """
+                (function() {
+                    console.log('JavaScript注入成功: ' + new Date().toISOString());
+                    // 在这里添加您需要的其他JavaScript代码
+                })();
+                """;
+                browser.executeJavaScript(jsCode, browser.getURL(), 0);
+            } catch (Exception e) {
+                System.err.println("[BasicBrowser] JavaScript注入失败: " + e.getMessage());
+            }
+        }
+    }
     /**
      * 等待资源包完全加载后初始化浏览器
      */
@@ -185,30 +204,10 @@ public class BasicBrowser extends Screen {
 
                             // 注册 ConsoleMessageHandler
                             browser.getClient().addDisplayHandler(new ConsoleMessageHandler());
+                            
+                            // 启动定期 JavaScript 注入
+                            startPeriodicJavaScriptInjection();
 
-                            // 添加加载完成事件监听器
-                            browser.getClient().addLoadHandler(new CefLoadHandler() {
-                                @Override
-                                public void onLoadEnd(CefBrowser cefBrowser, CefFrame frame, int httpStatusCode) {
-                                    System.out.println("[BasicBrowser] 网页加载完成。HTTP状态码: " + httpStatusCode);
-                                    System.out.println("[BasicBrowser] 当前页面URL: " + frame.getURL());
-                                }
-
-                                @Override
-                                public void onLoadingStateChange(CefBrowser browser, boolean isLoading, boolean canGoBack, boolean canGoForward) {
-                                    System.out.println("[BasicBrowser] 加载状态改变: " + isLoading);
-                                }
-
-                                @Override
-                                public void onLoadStart(CefBrowser browser, CefFrame frame, CefRequest.TransitionType transitionType) {
-                                    System.out.println("[BasicBrowser] 网页开始加载。URL: " + frame.getURL());
-                                }
-
-                                @Override
-                                public void onLoadError(CefBrowser browser, CefFrame frame, ErrorCode errorCode, String errorText, String failedUrl) {
-                                    System.err.println("[BasicBrowser] 网页加载错误: " + errorText + " 错误码: " + errorCode + " 失败URL: " + failedUrl);
-                                }
-                            });
                         } else {
                             System.err.println(Text.translatable("debug.browser.mcef_null").getString());
                             handleInitializationFailure();
@@ -222,6 +221,44 @@ public class BasicBrowser extends Screen {
                 System.err.println(Text.translatable("debug.browser.init_failed_async", e.getMessage()).getString());
                 minecraft.execute(this::handleInitializationFailure);
             }
+        });
+    }
+    
+    // 定期 JavaScript 注入任务
+    private void startPeriodicJavaScriptInjection() {
+        if (periodicInjectionTask != null) {
+            shouldStopInjection = true;
+            periodicInjectionTask.cancel(false);
+        }
+        
+        shouldStopInjection = false;
+        
+        periodicInjectionTask = CompletableFuture.runAsync(() -> {
+            while (!shouldStopInjection && !Thread.currentThread().isInterrupted()) {
+                try {
+                    // 每隔1秒执行一次 JavaScript 注入
+                    Thread.sleep(1000);
+                    
+                    // 在主线程中执行 JavaScript 注入
+                    minecraft.execute(() -> {
+                        if (browser != null && !shouldStopInjection) {
+                            try {
+                                String jsCode = "console.log('定期JavaScript注入: ' + new Date().toISOString());";
+                                browser.executeJavaScript(jsCode, browser.getURL(), 0);
+                            } catch (Exception e) {
+                                System.err.println("[BasicBrowser] 定期JavaScript注入失败: " + e.getMessage());
+                            }
+                        }
+                    });
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                } catch (Exception e) {
+                    System.err.println("[BasicBrowser] 定期注入循环异常: " + e.getMessage());
+                }
+            }
+            
+            System.out.println("[BasicBrowser] 定期JavaScript注入任务已停止");
         });
     }
 
@@ -421,6 +458,13 @@ public class BasicBrowser extends Screen {
 
     @Override
     public void close() {
+        // 停止定期注入任务
+        if (periodicInjectionTask != null) {
+            shouldStopInjection = true;
+            periodicInjectionTask.cancel(false);
+            periodicInjectionTask = null;
+        }
+
         // 完全移除光标恢复操作
         // restoreCursorState();
 
