@@ -4,8 +4,6 @@ import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonArray;
 import java.util.List;
-import java.util.Timer;
-import java.util.TimerTask;
 
 public class PlayerInformation {
 
@@ -145,7 +143,7 @@ public class PlayerInformation {
             playerJson.addProperty("name", player.getName());
             playerJson.addProperty("display_name", player.getDisplayName());
             playerJson.addProperty("x", player.getX());
-            playerJson.addProperty("y", 66); // 假设固定高度
+            playerJson.addProperty("y", 66);
             playerJson.addProperty("z", player.getZ());
             playerJson.addProperty("world", player.getWorld());
             playerJson.addProperty("yaw", player.getYaw());
@@ -156,41 +154,5 @@ public class PlayerInformation {
 
         root.add("players", playersArray);
         return gson.toJson(root);
-    }
-
-    public static void startPlayerJsonGeneration(List<PlayerInformation> players, int maxPlayers, long intervalMillis) {
-        Timer timer = new Timer(true);
-        timer.scheduleAtFixedRate(new TimerTask() {
-            @Override
-            public void run() {
-                String json = generatePlayerJson(players, maxPlayers);
-                System.out.println(json); // 这里可以替换为保存到文件或发送到服务器
-            }
-        }, 0, intervalMillis);
-    }
-
-    /**
-     * 生成本地玩家数据的 JSON 字符串。
-     * @return JSON 格式的玩家数据
-     */
-    public static String generateLocalPlayerJson() {
-        // 示例玩家数据，可以替换为动态生成的内容
-        List<PlayerInformation> players = List.of(
-            new PlayerInformation(
-                "289877384c6c30c1aa11d6d8ff63d871",
-                "BVVD",
-                "BVVD",
-                230150,
-                -60139,
-                "minecraft_overworld",
-                62,
-                40,
-                0,
-                "https://cravatar.eu/helmavatar/BVVD/16",
-                true,
-                "arrow"
-            )
-        );
-        return generatePlayerJson(players, 200);
     }
 }
