@@ -121,20 +121,20 @@ public class BasicBrowser extends Screen {
                     const originalFetch = window.fetch;
                     window.fetch = async function(...args) {
                         const [url] = args;
-                        console.log('fetch 被调用，URL:', url);
+                        //console.log('fetch 被调用，URL:', url);
                         if (typeof url === 'string' && url.includes('/players.json')) {
-                            console.log('拦截到 /players.json 请求');
+                            //console.log('拦截到 /players.json 请求');
 
                             try {
                                 // 获取本地API节点数据 (使用硬编码地址)
                                 const localResponse = await originalFetch("http://localhost:8080/local-players.json");
                                 const localData = await localResponse.json();
-                                console.log('本地API数据:', localData);
+                                //console.log('本地API数据:', localData);
 
                                 // 获取服务器原始数据
                                 const serverResponse = await originalFetch.apply(this, args);
                                 const serverData = await serverResponse.json();
-                                console.log('服务器原始数据:', serverData);
+                                //console.log('服务器原始数据:', serverData);
 
                                 // 合并数据 - 优先使用本地API节点的数据
                                 const mergedData = {
@@ -149,9 +149,9 @@ public class BasicBrowser extends Screen {
                                     ]
                                 };
 
-                                console.log('合并后数据:', mergedData);
+                                //console.log('合并后数据:', mergedData);
                                 // 打印完整的title/players.json数据
-                                console.log('完整的合并后title/players.json数据:', JSON.stringify(mergedData, null, 2));
+                                //console.log('完整的合并后title/players.json数据:', JSON.stringify(mergedData, null, 2));
 
                                 // 返回合并后的数据
                                 const updatedResponse = new Response(JSON.stringify(mergedData), {
@@ -162,7 +162,7 @@ public class BasicBrowser extends Screen {
                                 
                                 return updatedResponse;
                             } catch (error) {
-                                console.error('数据合并失败:', error);
+                                //console.error('数据合并失败:', error);
                                 // 如果合并失败，返回原始服务器数据
                                 return originalFetch.apply(this, args);
                             }
@@ -170,7 +170,7 @@ public class BasicBrowser extends Screen {
                         return originalFetch.apply(this, args);
                     };
 
-                    console.log('fetch 方法已劫持');
+                    //console.log('fetch 方法已劫持');
                 })();
                 """;
 
